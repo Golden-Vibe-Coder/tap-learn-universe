@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Count With Me!</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="mode-bar">
+    <button class="mode-btn active" data-mode="numbers">
+      <span class="mode-icon">123</span>
+      <span class="mode-label">Numbers</span>
+    </button>
+    <button class="mode-btn" data-mode="alphabet" disabled>
+      <span class="mode-icon">ABC</span>
+      <span class="mode-label">Coming Soon</span>
+    </button>
+  </nav>
+  <canvas id="gameCanvas"></canvas>
+  <script src="js/game.js"></script>
+</body>
+</html>
