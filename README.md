@@ -1,4 +1,4 @@
-# Count With Me!
+# Tap Learn Universe
 
 An educational number-tracing game for children ages 3 and up. Children trace numbers with their finger, building number recognition and fine motor skills in a fun, colorful environment.
 
