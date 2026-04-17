@@ -86,3 +86,18 @@ body {
   display: block;
   touch-action: none;
 }
+
+/* ── Icons8 attribution ────────────────────────────────────────────────────── */
+
+#attribution {
+  position: fixed;
+  bottom: 4px;
+  right: 6px;
+  font-size: 9px;
+  color: rgba(255,255,255,0.4);
+  text-decoration: none;
+  pointer-events: auto;
+  z-index: 10;
+  font-family: sans-serif;
+}
+#attribution:hover { color: rgba(255,255,255,0.8); }
