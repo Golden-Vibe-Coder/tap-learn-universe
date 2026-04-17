@@ -366,14 +366,15 @@ const state = {
     celStart:     0,
     celMsg:       '',
     particles:    [],
-    // Tile (draggable letter)
-    tileX: 0, tileY: 0, tileW: 0, tileH: 0,
-    tileHomeX: 0, tileHomeY: 0,
-    dragging: false,
+    // Three choice tiles [{letter, color, isCorrect, x, y, w, h, homeX, homeY}]
+    tiles: [],
+    draggingTileIdx: -1,
     dragOffX: 0, dragOffY: 0,
     // Drop zone (the blank box in the word)
     dropX: 0, dropY: 0, dropW: 0, dropH: 0,
-    placed: false,  // letter successfully dropped
+    placed: false,          // correct letter successfully dropped
+    tryAgainMsg:   '',      // shown briefly after wrong drop
+    tryAgainStart: -9999,   // timestamp when try-again msg was shown
   },
 };
 
@@ -1206,18 +1207,30 @@ function drawBackground() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ALPHABET_WORDS = [
-  { letter: 'A', word: 'ANT',  draw: _picAnt  },
-  { letter: 'B', word: 'BEE',  draw: _picBee  },
-  { letter: 'C', word: 'CAR',  draw: _picCar  },
-  { letter: 'D', word: 'DOG',  draw: _picDog  },
-  { letter: 'E', word: 'EGG',  draw: _picEgg  },
-  { letter: 'F', word: 'FISH', draw: _picFish },
-  { letter: 'H', word: 'HAT',  draw: _picHat  },
-  { letter: 'K', word: 'KEY',  draw: _picKey  },
-  { letter: 'M', word: 'MOON', draw: _picMoon },
-  { letter: 'O', word: 'OWL',  draw: _picOwl  },
-  { letter: 'P', word: 'PIG',  draw: _picPig  },
-  { letter: 'S', word: 'SUN',  draw: _picSun  },
+  { letter: 'A', word: 'ANT',      draw: _picAnt      },
+  { letter: 'B', word: 'BEE',      draw: _picBee      },
+  { letter: 'C', word: 'CAR',      draw: _picCar      },
+  { letter: 'D', word: 'DOG',      draw: _picDog      },
+  { letter: 'E', word: 'EGG',      draw: _picEgg      },
+  { letter: 'F', word: 'FISH',     draw: _picFish     },
+  { letter: 'G', word: 'GOAT',     draw: _picGoat     },
+  { letter: 'H', word: 'HAT',      draw: _picHat      },
+  { letter: 'I', word: 'ICECREAM', draw: _picIcecream  },
+  { letter: 'J', word: 'JUICE',    draw: _picJuice    },
+  { letter: 'K', word: 'KEY',      draw: _picKey      },
+  { letter: 'L', word: 'LION',     draw: _picLion     },
+  { letter: 'M', word: 'MOON',     draw: _picMoon     },
+  { letter: 'N', word: 'NEST',     draw: _picNest     },
+  { letter: 'O', word: 'OWL',      draw: _picOwl      },
+  { letter: 'P', word: 'PIG',      draw: _picPig      },
+  { letter: 'R', word: 'RAINBOW',  draw: _picRainbow  },
+  { letter: 'S', word: 'SUN',      draw: _picSun      },
+  { letter: 'T', word: 'TREE',     draw: _picTree     },
+  { letter: 'U', word: 'UMBRELLA', draw: _picUmbrella },
+  { letter: 'V', word: 'VIOLET',   draw: _picViolet   },
+  { letter: 'W', word: 'WHALE',    draw: _picWhale    },
+  { letter: 'X', word: 'XYLOPHONE',draw: _picXylophone},
+  { letter: 'Z', word: 'ZEBRA',    draw: _picZebra    },
 ];
 
 // ── Picture drawing functions (each draws centered at cx, cy within size s) ─
@@ -1405,19 +1418,55 @@ function _picKey(g, cx, cy, s) {
 }
 
 function _picMoon(g, cx, cy, s) {
-  const r = s * 0.25;
-  // Moon body
-  g.fillStyle = '#ffd700';
+  const r = s * 0.28;
+
+  // Soft glow behind moon
+  const glow = g.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 1.6);
+  glow.addColorStop(0, 'rgba(255,235,100,0.28)');
+  glow.addColorStop(1, 'rgba(255,235,100,0)');
+  g.fillStyle = glow;
+  g.beginPath(); g.arc(cx, cy, r * 1.6, 0, Math.PI * 2); g.fill();
+
+  // Moon body gradient (warm golden yellow)
+  const moonGrad = g.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.1, cx, cy, r);
+  moonGrad.addColorStop(0, '#fff5a0');
+  moonGrad.addColorStop(0.5, '#ffd84d');
+  moonGrad.addColorStop(1, '#e6a800');
+  g.fillStyle = moonGrad;
   g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
-  // Cut out crescent
-  g.fillStyle = '#1a1a4e';
-  g.beginPath(); g.arc(cx + r * 0.45, cy - r * 0.25, r * 0.8, 0, Math.PI * 2); g.fill();
-  // Stars
-  g.fillStyle = '#ffd700';
-  const stars = [[cx + r * 1.3, cy - r * 0.8, 4], [cx + r * 0.9, cy + r * 0.9, 3], [cx - r * 0.6, cy - r * 1.3, 3.5]];
-  for (const [sx, sy, sr] of stars) {
-    _star(g, sx, sy, sr); g.fill();
+
+  // Crescent shadow — clip out to make crescent shape
+  g.save();
+  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
+  g.clip();
+  g.fillStyle = '#1c2a5e';
+  g.beginPath(); g.arc(cx + r * 0.38, cy - r * 0.15, r * 0.85, 0, Math.PI * 2); g.fill();
+  g.restore();
+
+  // Subtle crater details on the visible crescent
+  g.save();
+  g.globalAlpha = 0.18;
+  g.fillStyle = '#e6a800';
+  g.beginPath(); g.arc(cx - r * 0.3, cy + r * 0.25, r * 0.12, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx - r * 0.55, cy - r * 0.2, r * 0.08, 0, Math.PI * 2); g.fill();
+  g.restore();
+
+  // Stars around the moon
+  const starData = [
+    [cx + r * 1.5,  cy - r * 1.1, r * 0.12],
+    [cx + r * 1.1,  cy + r * 1.0, r * 0.09],
+    [cx - r * 1.2,  cy - r * 0.9, r * 0.1 ],
+    [cx - r * 1.4,  cy + r * 0.7, r * 0.07],
+    [cx + r * 1.8,  cy + r * 0.2, r * 0.07],
+  ];
+  for (const [sx, sy, sr] of starData) {
+    g.fillStyle = '#fffacc';
+    g.shadowColor = '#ffd84d';
+    g.shadowBlur  = 6;
+    _star(g, sx, sy, sr);
+    g.fill();
   }
+  g.shadowBlur = 0;
 }
 
 function _picOwl(g, cx, cy, s) {
@@ -1503,17 +1552,735 @@ function _picSun(g, cx, cy, s) {
   g.beginPath(); g.arc(cx, cy + r * 0.1, r * 0.3, 0.15, Math.PI - 0.15); g.stroke();
 }
 
+function _picGoat(g, cx, cy, s) {
+  const r = s * 0.2;
+  g.fillStyle = '#d4c8a8';
+  g.beginPath(); g.ellipse(cx, cy + r * 0.2, r, r * 0.6, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(cx + r * 0.9, cy - r * 0.3, r * 0.42, r * 0.35, 0.3, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#c4b898';
+  g.beginPath(); g.ellipse(cx + r * 0.75, cy - r * 0.6, r * 0.1, r * 0.2, -0.4, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#a08050'; g.lineWidth = r * 0.12; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(cx + r * 0.88, cy - r * 0.62); g.lineTo(cx + r * 0.78, cy - r * 0.98); g.stroke();
+  g.beginPath(); g.moveTo(cx + r * 1.05, cy - r * 0.58); g.lineTo(cx + r * 1.12, cy - r * 0.92); g.stroke();
+  g.strokeStyle = '#d4c8a8'; g.lineWidth = r * 0.1;
+  g.beginPath(); g.moveTo(cx + r * 1.02, cy - r * 0.12); g.lineTo(cx + r * 1.06, cy + r * 0.15); g.stroke();
+  g.strokeStyle = '#c4b898'; g.lineWidth = r * 0.18;
+  for (const lx of [-r * 0.5, -r * 0.1, r * 0.3, r * 0.65]) {
+    g.beginPath(); g.moveTo(cx + lx, cy + r * 0.72); g.lineTo(cx + lx, cy + r * 1.25); g.stroke();
+  }
+  g.fillStyle = '#2d2d2d';
+  g.beginPath(); g.arc(cx + r * 1.08, cy - r * 0.38, r * 0.06, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#d4c8a8'; g.lineWidth = r * 0.13;
+  g.beginPath(); g.moveTo(cx - r, cy - r * 0.1); g.quadraticCurveTo(cx - r * 1.3, cy - r * 0.4, cx - r * 1.15, cy - r * 0.6); g.stroke();
+}
+
+function _picIcecream(g, cx, cy, s) {
+  const r = s * 0.22;
+  // Cone
+  g.fillStyle = '#d4a56a';
+  g.beginPath(); g.moveTo(cx - r * 0.6, cy + r * 0.1); g.lineTo(cx + r * 0.6, cy + r * 0.1); g.lineTo(cx, cy + r * 1.3); g.closePath(); g.fill();
+  // Waffle lines
+  g.strokeStyle = '#b8854a'; g.lineWidth = r * 0.06;
+  for (let i = 0; i < 3; i++) {
+    const gy = cy + r * (0.3 + i * 0.35);
+    const spread = r * 0.6 * (1 - (gy - cy - r * 0.1) / (r * 1.2));
+    g.beginPath(); g.moveTo(cx - spread, gy); g.lineTo(cx + spread, gy); g.stroke();
+  }
+  // Ice cream scoop
+  g.fillStyle = '#ffb3c6';
+  g.beginPath(); g.arc(cx, cy - r * 0.15, r * 0.62, Math.PI, 0); g.lineTo(cx + r * 0.62, cy + r * 0.1); g.lineTo(cx - r * 0.62, cy + r * 0.1); g.closePath(); g.fill();
+  // Scoop highlight
+  g.fillStyle = 'rgba(255,255,255,0.4)';
+  g.beginPath(); g.arc(cx - r * 0.22, cy - r * 0.32, r * 0.18, 0, Math.PI * 2); g.fill();
+  // Rainbow sprinkles (fixed positions, no random)
+  const sprinkles = [
+    { dx: -0.30, dy: -0.05, angle: 0.5,  col: '#e74c3c' },
+    { dx:  0.28, dy: -0.18, angle: -0.4, col: '#f39c12' },
+    { dx: -0.10, dy: -0.42, angle: 1.1,  col: '#f1c40f' },
+    { dx:  0.38, dy:  0.00, angle: 0.2,  col: '#2ecc71' },
+    { dx: -0.40, dy: -0.28, angle: -0.8, col: '#3498db' },
+    { dx:  0.15, dy: -0.10, angle: 0.9,  col: '#9b59b6' },
+    { dx: -0.20, dy:  0.02, angle: -0.3, col: '#e91e63' },
+    { dx:  0.05, dy: -0.38, angle: 0.6,  col: '#e74c3c' },
+    { dx:  0.42, dy: -0.30, angle: -1.0, col: '#1abc9c' },
+    { dx: -0.35, dy: -0.48, angle: 0.3,  col: '#f39c12' },
+    { dx:  0.25, dy: -0.50, angle: -0.6, col: '#3498db' },
+    { dx: -0.05, dy:  0.04, angle: 1.3,  col: '#2ecc71' },
+  ];
+  const sw = r * 0.14, sh = r * 0.055;
+  for (const { dx, dy, angle, col } of sprinkles) {
+    const sx = cx + dx * r, sy = cy + dy * r - r * 0.15;
+    g.save();
+    g.translate(sx, sy); g.rotate(angle);
+    g.fillStyle = col;
+    g.beginPath(); g.roundRect(-sw / 2, -sh / 2, sw, sh, sh * 0.5); g.fill();
+    g.restore();
+  }
+}
+
+function _picJuice(g, cx, cy, s) {
+  const r  = s * 0.22;
+  const bw = r * 1.18;
+  const bh = r * 1.62;
+  const bx = cx - bw / 2;
+  const by = cy - bh * 0.52;
+
+  // Drop shadow
+  g.fillStyle = 'rgba(0,0,0,0.12)';
+  g.beginPath(); g.ellipse(cx, by + bh + r*0.06, bw*0.42, r*0.09, 0, 0, Math.PI*2); g.fill();
+
+  // ── Gabled top ──
+  // The gable is a trapezoid pointing to a flat ridge in the centre
+  const gH   = r * 0.38;
+  const ridgeW = bw * 0.22;
+  g.fillStyle = '#b8001a';
+  g.beginPath();
+  g.moveTo(bx, by);
+  g.lineTo(cx - ridgeW/2, by - gH);
+  g.lineTo(cx + ridgeW/2, by - gH);
+  g.lineTo(bx + bw, by);
+  g.closePath(); g.fill();
+  // gable crease line
+  g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = r*0.05; g.lineCap = 'butt';
+  g.beginPath(); g.moveTo(cx, by - gH); g.lineTo(cx, by); g.stroke();
+
+  // ── Box body gradient (bold red) ──
+  const bodyGrad = g.createLinearGradient(bx, 0, bx + bw, 0);
+  bodyGrad.addColorStop(0,    '#c0001e');
+  bodyGrad.addColorStop(0.38, '#e8001e');
+  bodyGrad.addColorStop(0.62, '#e8001e');
+  bodyGrad.addColorStop(1,    '#8a0015');
+  g.fillStyle = bodyGrad;
+  g.beginPath(); g.roundRect(bx, by, bw, bh, [0,0,5,5]); g.fill();
+
+  // Left edge highlight
+  g.fillStyle = 'rgba(255,255,255,0.12)';
+  g.beginPath(); g.roundRect(bx, by, bw*0.18, bh, [0,0,0,5]); g.fill();
+
+  // ── White label band ──
+  const lx = bx + bw*0.1, ly = by + bh*0.08, lw = bw*0.8, lh = bh*0.56;
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.beginPath(); g.roundRect(lx, ly, lw, lh, 6); g.fill();
+
+  // Apple on label (red apple body)
+  const ax = cx, ay = ly + lh*0.46, ar = lh*0.29;
+  g.fillStyle = '#e8001e';
+  g.beginPath(); g.arc(ax, ay, ar, 0, Math.PI*2); g.fill();
+  // Apple highlight
+  g.fillStyle = 'rgba(255,255,255,0.35)';
+  g.beginPath(); g.ellipse(ax - ar*0.25, ay - ar*0.3, ar*0.28, ar*0.18, -0.5, 0, Math.PI*2); g.fill();
+  // Apple stem
+  g.strokeStyle = '#5a3010'; g.lineWidth = r*0.07; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(ax, ay - ar); g.quadraticCurveTo(ax + ar*0.4, ay - ar*1.35, ax + ar*0.2, ay - ar*1.5); g.stroke();
+  // Leaf
+  g.fillStyle = '#27ae60';
+  g.beginPath(); g.ellipse(ax + ar*0.32, ay - ar*1.28, ar*0.28, ar*0.13, 0.8, 0, Math.PI*2); g.fill();
+
+  // "100% JUICE" text
+  g.fillStyle = '#c0001e';
+  g.font = `bold ${r*0.26}px "${CONFIG.font}", sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('100% JUICE', cx, ly + lh*0.88);
+
+  // Box bottom border
+  g.strokeStyle = '#8a0015'; g.lineWidth = r*0.06;
+  g.beginPath(); g.roundRect(bx, by, bw, bh, [0,0,5,5]); g.stroke();
+
+  // ── Straw — silver, poking up from the gable ridge ──
+  const sx = cx + bw*0.22;
+  const strawBot = by - gH * 0.5;
+  const strawTop = by - gH - r*0.72;
+  // Silver straw body
+  const strawGrad = g.createLinearGradient(sx - r*0.07, 0, sx + r*0.07, 0);
+  strawGrad.addColorStop(0,    '#aaa');
+  strawGrad.addColorStop(0.35, '#eee');
+  strawGrad.addColorStop(1,    '#bbb');
+  g.strokeStyle = strawGrad; g.lineWidth = r*0.13; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(sx, strawBot); g.lineTo(sx, strawTop); g.stroke();
+  // Wrapper stripe on straw
+  g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = r*0.04;
+  g.beginPath(); g.moveTo(sx, strawBot); g.lineTo(sx, strawTop); g.stroke();
+}
+
+function _picLion(g, cx, cy, s) {
+  const r = s * 0.22;
+  const maneColors = ['#d4a030','#c8902a','#e0b040','#b87820'];
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    g.fillStyle = maneColors[i % maneColors.length];
+    g.beginPath(); g.ellipse(cx + Math.cos(a) * r * 0.78, cy + Math.sin(a) * r * 0.78, r * 0.28, r * 0.18, a, 0, Math.PI * 2); g.fill();
+  }
+  const headGrad = g.createRadialGradient(cx, cy, r * 0.1, cx, cy, r * 0.62);
+  headGrad.addColorStop(0, '#f5c84a'); headGrad.addColorStop(1, '#d4a030');
+  g.fillStyle = headGrad;
+  g.beginPath(); g.arc(cx, cy, r * 0.62, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#d4a030';
+  g.beginPath(); g.arc(cx - r * 0.52, cy - r * 0.52, r * 0.16, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + r * 0.52, cy - r * 0.52, r * 0.16, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#e8a0a0';
+  g.beginPath(); g.arc(cx - r * 0.52, cy - r * 0.52, r * 0.09, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + r * 0.52, cy - r * 0.52, r * 0.09, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#2d2d2d';
+  g.beginPath(); g.arc(cx - r * 0.23, cy - r * 0.12, r * 0.1, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + r * 0.23, cy - r * 0.12, r * 0.1, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(cx - r * 0.19, cy - r * 0.15, r * 0.04, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(cx + r * 0.27, cy - r * 0.15, r * 0.04, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#d4607a';
+  g.beginPath(); g.arc(cx, cy + r * 0.12, r * 0.1, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#a03050'; g.lineWidth = r * 0.07; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(cx, cy + r * 0.22); g.lineTo(cx - r * 0.18, cy + r * 0.36); g.stroke();
+  g.beginPath(); g.moveTo(cx, cy + r * 0.22); g.lineTo(cx + r * 0.18, cy + r * 0.36); g.stroke();
+  g.fillStyle = '#a07020';
+  for (const [wx, wy] of [[-r*0.38,r*0.12],[-r*0.38,r*0.24],[r*0.38,r*0.12],[r*0.38,r*0.24]]) {
+    g.beginPath(); g.arc(cx + wx, cy + wy, r * 0.04, 0, Math.PI * 2); g.fill();
+  }
+}
+
+function _picNest(g, cx, cy, s) {
+  const r = s * 0.24;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+
+  // --- Colour palette (no Math.random — fixed per-index) ---
+  const browns = ['#8b5e20','#6b3a0a','#a07030','#7a4a18','#5a2e08','#c8903a'];
+
+  // --- Nest bowl shadow ---
+  g.fillStyle = 'rgba(0,0,0,0.18)';
+  g.beginPath(); g.ellipse(cx, cy + r*0.72, r*0.88, r*0.15, 0, 0, Math.PI*2); g.fill();
+
+  // --- Outer straw/twig strands: layered arcs forming the bowl wall ---
+  // Each "ring" is a slightly different ellipse — bottom rings wider and lower
+  const rings = [
+    { oy: r*0.55, rx: r*0.92, ry: r*0.30, lw: r*0.13 },
+    { oy: r*0.38, rx: r*0.88, ry: r*0.28, lw: r*0.12 },
+    { oy: r*0.22, rx: r*0.84, ry: r*0.26, lw: r*0.11 },
+    { oy: r*0.08, rx: r*0.80, ry: r*0.24, lw: r*0.10 },
+    { oy:-r*0.04, rx: r*0.76, ry: r*0.22, lw: r*0.09 },
+    { oy:-r*0.14, rx: r*0.72, ry: r*0.20, lw: r*0.09 },
+  ];
+
+  // Draw the bowl bottom fill first so twig strands sit on top
+  const bowlGrad = g.createRadialGradient(cx, cy + r*0.35, r*0.05, cx, cy + r*0.38, r*0.72);
+  bowlGrad.addColorStop(0, '#2a1204');
+  bowlGrad.addColorStop(0.55, '#5a2e08');
+  bowlGrad.addColorStop(1, '#7a4818');
+  g.fillStyle = bowlGrad;
+  g.beginPath(); g.ellipse(cx, cy + r*0.38, r*0.88, r*0.52, 0, 0, Math.PI*2); g.fill();
+
+  // Now draw twig rings back-to-front (bottom first)
+  for (let ri = 0; ri < rings.length; ri++) {
+    const { oy, rx: rx_, ry: ry_, lw } = rings[ri];
+    const baseY = cy + oy;
+    // Each ring: draw multiple overlapping arc segments with alternating colors
+    const nSegs = 16;
+    for (let seg = 0; seg < nSegs; seg++) {
+      // Only draw the lower 70% of the ellipse (bottom cup shape, not a full ring)
+      const a1 = -0.1 + (seg / nSegs) * (Math.PI + 0.2);
+      const a2 = -0.1 + ((seg + 0.75) / nSegs) * (Math.PI + 0.2);
+      const colIdx = (ri * 3 + seg) % browns.length;
+      g.strokeStyle = browns[colIdx];
+      g.lineWidth = lw;
+      // Approximate arc along an ellipse using bezier
+      const mx = cx + Math.cos((a1+a2)/2) * rx_;
+      const my = baseY + Math.sin((a1+a2)/2) * ry_;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a1)*rx_, baseY + Math.sin(a1)*ry_);
+      g.quadraticCurveTo(
+        mx + (Math.cos((a1+a2)/2+Math.PI/2)) * rx_*0.08,
+        my + (Math.sin((a1+a2)/2+Math.PI/2)) * ry_*0.08,
+        cx + Math.cos(a2)*rx_, baseY + Math.sin(a2)*ry_
+      );
+      g.stroke();
+    }
+  }
+
+  // --- Diagonal cross-weave (fixed offsets, no random) ---
+  const weaveOffsets = [0.0, 0.35, 0.7, 1.05, 1.4, 1.75, 2.1, 2.45, 2.8, 3.14, 3.49, 3.84];
+  g.lineWidth = r * 0.07;
+  for (let i = 0; i < weaveOffsets.length; i++) {
+    const a = weaveOffsets[i];
+    const x1 = cx + Math.cos(a) * r*0.42;
+    const y1 = cy + r*0.38 + Math.sin(a) * r*0.22;
+    const x2 = cx + Math.cos(a + 0.9) * r*0.86;
+    const y2 = cy + r*0.38 + Math.sin(a + 0.9) * r*0.40;
+    g.strokeStyle = browns[(i * 2) % browns.length];
+    g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+  }
+
+  // --- Rim stray strands (fixed spread values, no random) ---
+  const rimSpreads = [-0.22, 0.18, -0.12, 0.24, -0.08, 0.20, -0.18, 0.14, -0.06, 0.22, -0.16, 0.10];
+  const rimTop = cy - r*0.14;
+  g.lineWidth = r * 0.07;
+  for (let i = 0; i < 12; i++) {
+    const a = Math.PI + (i / 11) * Math.PI;
+    const px = cx + Math.cos(a) * r*0.78;
+    const py = rimTop + Math.sin(a) * r*0.22;
+    const stickLen = r * (0.20 + (i % 3) * 0.10);
+    const sp = rimSpreads[i];
+    const ex = px + Math.cos(a + sp) * stickLen;
+    const ey = py + Math.sin(a + sp) * stickLen;
+    g.strokeStyle = browns[(i + 1) % browns.length];
+    g.beginPath();
+    g.moveTo(px, py);
+    g.quadraticCurveTo(
+      px + Math.cos(a + sp * 0.5) * stickLen * 0.55,
+      py + Math.sin(a + sp * 0.5) * stickLen * 0.55,
+      ex, ey
+    );
+    g.stroke();
+  }
+
+  // --- Three eggs nestled inside ---
+  const eggData = [
+    { ex: cx - r*0.32, ey: cy + r*0.10, col: '#acd8f0', tilt: -0.18 },
+    { ex: cx,          ey: cy - r*0.04, col: '#b8e8b0', tilt:  0.0  },
+    { ex: cx + r*0.32, ey: cy + r*0.10, col: '#c8d8f8', tilt:  0.18 },
+  ];
+  for (const { ex, ey, col, tilt } of eggData) {
+    g.fillStyle = 'rgba(0,0,0,0.15)';
+    g.beginPath(); g.ellipse(ex, ey + r*0.30, r*0.20, r*0.06, tilt, 0, Math.PI*2); g.fill();
+    g.fillStyle = col;
+    g.beginPath(); g.ellipse(ex, ey, r*0.20, r*0.27, tilt, 0, Math.PI*2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.5)';
+    g.beginPath(); g.ellipse(ex - r*0.05, ey - r*0.09, r*0.07, r*0.10, tilt - 0.3, 0, Math.PI*2); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = r*0.05;
+    g.beginPath(); g.ellipse(ex, ey, r*0.20, r*0.27, tilt, 0, Math.PI*2); g.stroke();
+  }
+}
+
+function _picRainbow(g, cx, cy, s) {
+  const r = s * 0.3;
+  const bands = ['#e74c3c','#e67e22','#f1c40f','#2ecc71','#3498db','#9b59b6'];
+  for (let i = 0; i < bands.length; i++) {
+    const br = r - i * r * 0.12;
+    g.strokeStyle = bands[i]; g.lineWidth = r * 0.11;
+    g.beginPath(); g.arc(cx, cy + r * 0.15, br, Math.PI, 0); g.stroke();
+  }
+  g.fillStyle = '#fff';
+  for (const side of [-1, 1]) {
+    const bx = cx + side * r * 1.05;
+    for (const [ox, oy, or_] of [[0,0,r*0.14],[-r*0.12,r*0.08,r*0.1],[r*0.12,r*0.08,r*0.1]]) {
+      g.beginPath(); g.arc(bx + ox, cy + r * 0.15 + oy, or_, 0, Math.PI * 2); g.fill();
+    }
+  }
+}
+
+function _picTree(g, cx, cy, s) {
+  const r = s * 0.22;
+  g.fillStyle = '#8b5e20';
+  g.beginPath(); g.roundRect(cx - r * 0.18, cy + r * 0.3, r * 0.36, r * 0.75, [0,0,4,4]); g.fill();
+  const layers = [
+    { y: cy + r * 0.35, w: r * 1.1, h: r * 0.7 },
+    { y: cy - r * 0.1,  w: r * 0.9, h: r * 0.65 },
+    { y: cy - r * 0.55, w: r * 0.68, h: r * 0.6 },
+  ];
+  const greens = ['#27ae60','#2ecc71','#58d68d'];
+  layers.forEach(({ y, w, h }, i) => {
+    g.fillStyle = greens[i];
+    g.beginPath(); g.moveTo(cx - w, y + h); g.lineTo(cx + w, y + h); g.lineTo(cx, y); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(cx - w + 4, y + h - 2); g.lineTo(cx, y + 2); g.stroke();
+  });
+}
+
+function _picUmbrella(g, cx, cy, s) {
+  const r = s * 0.23;
+  const colors = ['#e74c3c','#f1c40f','#3498db','#2ecc71','#9b59b6','#e67e22'];
+  for (let i = 0; i < 6; i++) {
+    const a1 = Math.PI + (i / 6) * Math.PI;
+    const a2 = Math.PI + ((i + 1) / 6) * Math.PI;
+    g.fillStyle = colors[i];
+    g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, r, a1, a2); g.closePath(); g.fill();
+  }
+  g.strokeStyle = 'rgba(0,0,0,0.15)'; g.lineWidth = 1;
+  g.beginPath(); g.arc(cx, cy, r, Math.PI, 0); g.stroke();
+  g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 0.8;
+  for (let i = 0; i <= 6; i++) {
+    const a = Math.PI + (i / 6) * Math.PI;
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); g.stroke();
+  }
+  g.strokeStyle = '#8b5e20'; g.lineWidth = r * 0.12; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy + r * 1.1); g.stroke();
+  g.beginPath(); g.arc(cx - r * 0.18, cy + r * 1.1, r * 0.18, 0, Math.PI); g.stroke();
+  g.fillStyle = '#8b5e20';
+  g.beginPath(); g.arc(cx, cy - r * 0.05, r * 0.07, 0, Math.PI * 2); g.fill();
+}
+
+function _picViolet(g, cx, cy, s) {
+  const r = s * 0.22;
+  // Stem
+  g.strokeStyle = '#3a8a30'; g.lineWidth = r * 0.1; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(cx, cy + r * 0.18); g.bezierCurveTo(cx - r * 0.1, cy + r * 0.6, cx, cy + r * 0.9, cx, cy + r * 1.2); g.stroke();
+  // Leaves
+  g.fillStyle = '#3a8a30';
+  g.beginPath(); g.ellipse(cx - r * 0.32, cy + r * 0.72, r * 0.32, r * 0.14, -0.5, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(cx + r * 0.28, cy + r * 0.58, r * 0.28, r * 0.12, 0.5, 0, Math.PI * 2); g.fill();
+  // 5 petals
+  const petalColors = ['#7b3fa0','#9b59b6','#8e44ad','#a569bd','#6c3483'];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    g.fillStyle = petalColors[i];
+    g.beginPath();
+    g.ellipse(cx + Math.cos(a) * r * 0.42, cy + Math.sin(a) * r * 0.42, r * 0.3, r * 0.18, a, 0, Math.PI * 2);
+    g.fill();
+  }
+  // Petal highlights
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = r * 0.04;
+    g.beginPath();
+    g.moveTo(cx + Math.cos(a) * r * 0.15, cy + Math.sin(a) * r * 0.15);
+    g.lineTo(cx + Math.cos(a) * r * 0.62, cy + Math.sin(a) * r * 0.62);
+    g.stroke();
+  }
+  // Yellow center
+  const cg = g.createRadialGradient(cx, cy, 0, cx, cy, r * 0.2);
+  cg.addColorStop(0, '#fff176'); cg.addColorStop(1, '#f1c40f');
+  g.fillStyle = cg;
+  g.beginPath(); g.arc(cx, cy, r * 0.2, 0, Math.PI * 2); g.fill();
+}
+
+function _picWhale(g, cx, cy, s) {
+  const r = s * 0.22;
+  const wGrad = g.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
+  wGrad.addColorStop(0, '#5dade2'); wGrad.addColorStop(1, '#1a6fa0');
+  g.fillStyle = wGrad;
+  g.beginPath(); g.ellipse(cx, cy, r * 1.1, r * 0.62, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#d0eaf8';
+  g.beginPath(); g.ellipse(cx + r * 0.15, cy + r * 0.2, r * 0.6, r * 0.3, 0.2, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#1a6fa0';
+  g.beginPath();
+  g.moveTo(cx - r * 0.9, cy + r * 0.05);
+  g.bezierCurveTo(cx - r * 1.4, cy - r * 0.3, cx - r * 1.6, cy + r * 0.1, cx - r * 1.3, cy + r * 0.5);
+  g.bezierCurveTo(cx - r * 1.1, cy + r * 0.3, cx - r * 1.0, cy + r * 0.4, cx - r * 0.9, cy + r * 0.5);
+  g.bezierCurveTo(cx - r * 1.0, cy + r * 0.1, cx - r * 0.9, cy + r * 0.1, cx - r * 0.9, cy + r * 0.05);
+  g.closePath(); g.fill();
+  g.beginPath();
+  g.moveTo(cx, cy - r * 0.2);
+  g.bezierCurveTo(cx + r * 0.3, cy - r * 0.9, cx + r * 0.6, cy - r * 0.7, cx + r * 0.3, cy - r * 0.1);
+  g.closePath(); g.fill();
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(cx + r * 0.65, cy - r * 0.12, r * 0.12, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#1a1a4e';
+  g.beginPath(); g.arc(cx + r * 0.68, cy - r * 0.12, r * 0.06, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#1a6fa0'; g.lineWidth = r * 0.07; g.lineCap = 'round';
+  g.beginPath(); g.arc(cx + r * 0.6, cy + r * 0.12, r * 0.22, 0, Math.PI); g.stroke();
+  g.strokeStyle = '#a8d8f0'; g.lineWidth = r * 0.1;
+  g.beginPath(); g.moveTo(cx + r * 0.4, cy - r * 0.58); g.quadraticCurveTo(cx + r * 0.55, cy - r * 1.1, cx + r * 0.3, cy - r * 1.35); g.stroke();
+  g.beginPath(); g.moveTo(cx + r * 0.5, cy - r * 0.55); g.quadraticCurveTo(cx + r * 0.68, cy - r * 1.05, cx + r * 0.78, cy - r * 1.3); g.stroke();
+}
+
+function _picXylophone(g, cx, cy, s) {
+  const r = s * 0.24;
+  const barColors = ['#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#9b59b6','#e91e63'];
+  const nBars  = barColors.length;
+  const totalW = r * 1.9;
+  const barW   = totalW / nBars - r * 0.04;
+  const startX = cx - totalW / 2;
+  const baseH  = r * 1.1;
+
+  // Compute bar top/bottom positions for frame sizing
+  const tallestTop = cy - baseH + r * 0.4;
+  const shortestH  = baseH - (nBars - 1) * r * 0.06;
+  const shortestTop = cy - shortestH + r * 0.4;
+  const barBottom   = cy + r * 0.4;
+
+  // Bars (tallest on left, shortest on right)
+  for (let i = 0; i < nBars; i++) {
+    const bx   = startX + i * (barW + r * 0.04);
+    const barH = baseH - i * r * 0.06;
+    const by   = cy - barH + r * 0.4;
+    g.fillStyle = barColors[i];
+    g.beginPath(); g.roundRect(bx, by, barW, barH, [4,4,2,2]); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.25)';
+    g.beginPath(); g.roundRect(bx + barW*0.1, by + 2, barW*0.3, barH*0.5, 2); g.fill();
+    // Cord holes
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    g.beginPath(); g.arc(bx + barW/2, by + barH*0.18, r*0.04, 0, Math.PI*2); g.fill();
+    g.beginPath(); g.arc(bx + barW/2, by + barH*0.82, r*0.04, 0, Math.PI*2); g.fill();
+  }
+
+  // Two mallets resting diagonally ON the bars (handle stays above bar bottoms)
+  const malletData = [
+    { x1: startX + totalW*0.05, y1: barBottom - r*0.05, x2: cx - r*0.15,       y2: tallestTop + r*0.1 },
+    { x1: cx + r*0.1,           y1: barBottom - r*0.05, x2: startX + totalW - r*0.1, y2: shortestTop + r*0.15 },
+  ];
+  for (const { x1, y1, x2, y2 } of malletData) {
+    g.strokeStyle = '#c8903a'; g.lineWidth = r*0.09; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+    g.fillStyle = '#e74c3c';
+    g.beginPath(); g.arc(x2, y2, r*0.14, 0, Math.PI*2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.3)';
+    g.beginPath(); g.arc(x2 - r*0.04, y2 - r*0.04, r*0.05, 0, Math.PI*2); g.fill();
+  }
+}
+
+
+
+function _picZebra(g, cx, cy, s) {
+  const r = s * 0.22;
+
+  // Soft green-grass backdrop so the white body is always visible
+  const bgGrad = g.createRadialGradient(cx, cy + r*0.2, r*0.1, cx, cy + r*0.2, r*1.3);
+  bgGrad.addColorStop(0, '#c8eaff');
+  bgGrad.addColorStop(1, '#e8f6ff');
+  g.fillStyle = bgGrad;
+  g.beginPath(); g.ellipse(cx, cy + r*0.1, r*1.4, r*1.1, 0, 0, Math.PI*2); g.fill();
+
+  // Ground line
+  g.fillStyle = '#a8d878';
+  g.beginPath(); g.ellipse(cx, cy + r*1.08, r*1.1, r*0.22, 0, 0, Math.PI*2); g.fill();
+
+  // Body (warm off-white — contrasts backdrop)
+  const bodyCol = '#ede8de';
+  g.fillStyle = bodyCol;
+  g.beginPath(); g.ellipse(cx - r*0.08, cy + r*0.18, r*0.95, r*0.52, 0, 0, Math.PI*2); g.fill();
+
+  // Neck + head
+  g.fillStyle = bodyCol;
+  g.beginPath(); g.ellipse(cx + r*0.78, cy - r*0.22, r*0.36, r*0.30, 0.35, 0, Math.PI*2); g.fill();
+
+  // Muzzle
+  g.fillStyle = '#e0d8c8';
+  g.beginPath(); g.ellipse(cx + r*1.10, cy - r*0.08, r*0.18, r*0.13, 0.5, 0, Math.PI*2); g.fill();
+
+  // Ears
+  g.fillStyle = bodyCol;
+  g.beginPath(); g.ellipse(cx + r*0.74, cy - r*0.56, r*0.09, r*0.17, -0.3, 0, Math.PI*2); g.fill();
+  g.fillStyle = '#ffb3c1';
+  g.beginPath(); g.ellipse(cx + r*0.74, cy - r*0.56, r*0.05, r*0.10, -0.3, 0, Math.PI*2); g.fill();
+
+  // Mane (dark spiky ridge along neck)
+  g.fillStyle = '#1a1a1a';
+  for (let i = 0; i < 8; i++) {
+    const t = i / 7;
+    const mx = cx + r*(0.35 + t*0.55);
+    const my = cy - r*(0.08 + t*0.30);
+    g.beginPath(); g.ellipse(mx, my - r*0.14, r*0.05, r*0.14, -0.3 + t*0.1, 0, Math.PI*2); g.fill();
+  }
+
+  // Legs (white base, hooves dark)
+  const legXs = [cx - r*0.58, cx - r*0.22, cx + r*0.20, cx + r*0.56];
+  for (const lx of legXs) {
+    g.strokeStyle = bodyCol; g.lineWidth = r*0.20; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(lx, cy + r*0.62); g.lineTo(lx, cy + r*1.12); g.stroke();
+    g.strokeStyle = '#1a1a1a'; g.lineWidth = r*0.20;
+    g.beginPath(); g.moveTo(lx, cy + r*1.0); g.lineTo(lx, cy + r*1.12); g.stroke();
+  }
+
+  // Tail
+  g.strokeStyle = '#1a1a1a'; g.lineWidth = r*0.09; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(cx - r*0.95, cy + r*0.05); g.quadraticCurveTo(cx - r*1.3, cy - r*0.2, cx - r*1.15, cy - r*0.5); g.stroke();
+
+  // Black stripes on body — curved for roundness
+  g.strokeStyle = '#1a1a1a'; g.lineWidth = r*0.11; g.lineCap = 'butt';
+  const bodyStripes = [
+    [cx - r*0.58, cy - r*0.28, cx - r*0.50, cy + r*0.62],
+    [cx - r*0.22, cy - r*0.48, cx - r*0.14, cy + r*0.58],
+    [cx + r*0.14, cy - r*0.50, cx + r*0.20, cy + r*0.54],
+    [cx + r*0.46, cy - r*0.42, cx + r*0.52, cy + r*0.46],
+  ];
+  for (const [x1,y1,x2,y2] of bodyStripes) {
+    g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke();
+  }
+
+  // Stripes on neck/head
+  g.lineWidth = r*0.09;
+  g.beginPath(); g.moveTo(cx + r*0.65, cy - r*0.50); g.lineTo(cx + r*0.80, cy + r*0.02); g.stroke();
+  g.beginPath(); g.moveTo(cx + r*0.88, cy - r*0.48); g.lineTo(cx + r*1.00, cy - r*0.04); g.stroke();
+
+  // Eye
+  g.fillStyle = '#1a1a1a';
+  g.beginPath(); g.arc(cx + r*1.02, cy - r*0.28, r*0.07, 0, Math.PI*2); g.fill();
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(cx + r*1.04, cy - r*0.30, r*0.03, 0, Math.PI*2); g.fill();
+
+  // Nostril
+  g.fillStyle = '#bbb';
+  g.beginPath(); g.arc(cx + r*1.20, cy - r*0.04, r*0.04, 0, Math.PI*2); g.fill();
+
+  // Body outline
+  g.strokeStyle = 'rgba(80,60,30,0.3)'; g.lineWidth = r*0.06; g.lineCap = 'round';
+  g.beginPath(); g.ellipse(cx - r*0.08, cy + r*0.18, r*0.95, r*0.52, 0, 0, Math.PI*2); g.stroke();
+}
+
 // ── Classroom background ────────────────────────────────────────────────────
 
 let abcBgCache = null;
+
+// Chalk-style doodles drawn onto the lower portion of the chalkboard
+function _drawChalkDoodles(g, bx, bY, bW, bH) {
+  // Doodles live in the bottom 62% of the board
+  const zone  = bH * 0.62;
+  const top   = bY + bH - zone;
+  const chalk = (r, gr, b, a = 0.82) => `rgba(${r},${gr},${b},${a})`;
+
+  g.save();
+  g.lineCap  = 'round';
+  g.lineJoin = 'round';
+
+  // helper: chalk stroke style
+  const cs = (color, lw) => { g.strokeStyle = color; g.lineWidth = lw; };
+  const cf = (color)      => { g.fillStyle   = color; };
+
+  // ── 1. Sun (left side) ──
+  {
+    const cx = bx + bW * 0.11, cy = top + zone * 0.45, r = bH * 0.095;
+    cs(chalk(255, 230, 100), r * 0.22);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a) * r * 1.25, cy + Math.sin(a) * r * 1.25);
+      g.lineTo(cx + Math.cos(a) * r * 1.8,  cy + Math.sin(a) * r * 1.8);
+      g.stroke();
+    }
+    cf(chalk(255, 235, 100)); g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+    // dot eyes + smile
+    cf(chalk(200, 160, 20, 0.9));
+    g.beginPath(); g.arc(cx - r * 0.28, cy - r * 0.18, r * 0.1, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(cx + r * 0.28, cy - r * 0.18, r * 0.1, 0, Math.PI * 2); g.fill();
+    cs(chalk(200, 150, 10), r * 0.15);
+    g.beginPath(); g.arc(cx, cy + r * 0.15, r * 0.3, 0.2, Math.PI - 0.2); g.stroke();
+  }
+
+  // ── 2. Stick figure girl (left-centre) ──
+  {
+    const cx = bx + bW * 0.26, cy = top + zone * 0.38, r = bH * 0.088;
+    const lw = r * 0.18;
+    cs(chalk(255, 180, 180), lw);
+    // Head
+    cf(chalk(255, 200, 200, 0.75));
+    g.beginPath(); g.arc(cx, cy - r * 0.9, r * 0.38, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(cx, cy - r * 0.9, r * 0.38, 0, Math.PI * 2); g.stroke();
+    // Hair tufts
+    cs(chalk(255, 150, 150), lw * 0.9);
+    g.beginPath(); g.moveTo(cx - r * 0.25, cy - r * 1.2); g.lineTo(cx - r * 0.45, cy - r * 1.55); g.stroke();
+    g.beginPath(); g.moveTo(cx + r * 0.25, cy - r * 1.2); g.lineTo(cx + r * 0.45, cy - r * 1.55); g.stroke();
+    // Body
+    cs(chalk(255, 180, 180), lw);
+    g.beginPath(); g.moveTo(cx, cy - r * 0.52); g.lineTo(cx, cy + r * 0.5); g.stroke();
+    // Skirt triangle
+    cf(chalk(255, 150, 180, 0.6));
+    g.beginPath(); g.moveTo(cx - r * 0.05, cy + r * 0.1); g.lineTo(cx - r * 0.45, cy + r * 0.9); g.lineTo(cx + r * 0.45, cy + r * 0.9); g.closePath(); g.fill();
+    // Arms
+    g.beginPath(); g.moveTo(cx, cy - r * 0.15); g.lineTo(cx - r * 0.5, cy + r * 0.2); g.stroke();
+    g.beginPath(); g.moveTo(cx, cy - r * 0.15); g.lineTo(cx + r * 0.5, cy + r * 0.2); g.stroke();
+    // Legs
+    g.beginPath(); g.moveTo(cx, cy + r * 0.5); g.lineTo(cx - r * 0.3, cy + r * 1.15); g.stroke();
+    g.beginPath(); g.moveTo(cx, cy + r * 0.5); g.lineTo(cx + r * 0.3, cy + r * 1.15); g.stroke();
+  }
+
+  // ── 3. House (centre-left) ──
+  {
+    const cx = bx + bW * 0.41, cy = top + zone * 0.55, r = bH * 0.115;
+    const lw = r * 0.15;
+    cs(chalk(180, 220, 255), lw);
+    cf(chalk(160, 205, 255, 0.22));
+    // Walls
+    g.beginPath(); g.rect(cx - r * 0.6, cy - r * 0.2, r * 1.2, r * 0.9); g.fill(); g.stroke();
+    // Roof
+    cf(chalk(255, 140, 120, 0.3));
+    g.beginPath(); g.moveTo(cx - r * 0.72, cy - r * 0.2); g.lineTo(cx, cy - r * 1.05); g.lineTo(cx + r * 0.72, cy - r * 0.2); g.closePath(); g.fill(); g.stroke();
+    // Door
+    cs(chalk(200, 180, 140), lw * 0.85);
+    g.beginPath(); g.roundRect(cx - r * 0.15, cy + r * 0.28, r * 0.3, r * 0.42, 2); g.stroke();
+    // Window
+    g.beginPath(); g.rect(cx - r * 0.5, cy - r * 0.05, r * 0.28, r * 0.28); g.stroke();
+    g.beginPath(); g.moveTo(cx - r * 0.36, cy - r * 0.05); g.lineTo(cx - r * 0.36, cy + r * 0.23); g.stroke();
+    g.beginPath(); g.moveTo(cx - r * 0.5, cy + r * 0.09); g.lineTo(cx - r * 0.22, cy + r * 0.09); g.stroke();
+  }
+
+  // ── 4. Flower (centre) ──
+  {
+    const cx = bx + bW * 0.56, cy = top + zone * 0.48, r = bH * 0.095;
+    const lw = r * 0.15;
+    // Stem
+    cs(chalk(120, 210, 100), lw);
+    g.beginPath(); g.moveTo(cx, cy + r * 0.35); g.bezierCurveTo(cx - r * 0.3, cy + r * 0.8, cx + r * 0.2, cy + r * 0.9, cx, cy + r * 1.2); g.stroke();
+    // Leaves
+    cf(chalk(120, 210, 100, 0.55));
+    g.beginPath(); g.ellipse(cx - r * 0.35, cy + r * 0.7, r * 0.3, r * 0.14, -0.5, 0, Math.PI * 2); g.fill();
+    // Petals
+    const petalColors = [chalk(255,180,220), chalk(255,220,100), chalk(200,160,255), chalk(140,220,255)];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      cf(petalColors[i % petalColors.length]);
+      g.beginPath(); g.ellipse(cx + Math.cos(a) * r * 0.42, cy + Math.sin(a) * r * 0.42, r * 0.22, r * 0.12, a, 0, Math.PI * 2); g.fill();
+    }
+    // Centre
+    cf(chalk(255, 230, 80));
+    g.beginPath(); g.arc(cx, cy, r * 0.22, 0, Math.PI * 2); g.fill();
+  }
+
+  // ── 5. Alphabet blocks (centre-right) ──
+  {
+    const bkx = bx + bW * 0.70, bky = top + zone * 0.35, bs = bH * 0.135;
+    const blockData = [
+      { dx: 0,        dy: bs * 0.55, col: chalk(100, 190, 255), letter: '1' },
+      { dx: bs * 0.9, dy: bs * 0.55, col: chalk(255, 140, 100), letter: '2' },
+      { dx: bs * 0.45,dy: 0,         col: chalk(120, 220, 130), letter: '3' },
+    ];
+    for (const b of blockData) {
+      cf(b.col.replace(/[\d.]+\)$/, '0.35)'));
+      g.beginPath(); g.roundRect(bkx + b.dx, bky + b.dy, bs * 0.82, bs * 0.82, 3); g.fill();
+      cs(b.col, bs * 0.1);
+      g.beginPath(); g.roundRect(bkx + b.dx, bky + b.dy, bs * 0.82, bs * 0.82, 3); g.stroke();
+      g.fillStyle  = b.col;
+      g.font       = `bold ${bs * 0.48}px "Fredoka One", sans-serif`;
+      g.textAlign  = 'center'; g.textBaseline = 'middle';
+      g.fillText(b.letter, bkx + b.dx + bs * 0.41, bky + b.dy + bs * 0.42);
+    }
+  }
+
+  // ── 6. Crayon (right side) ──
+  {
+    const cx = bx + bW * 0.87, cy = top + zone * 0.48, len = bH * 0.38, wid = bH * 0.060;
+    const angle = -Math.PI / 5;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    cf(chalk(255, 120, 60, 0.72));
+    g.save(); g.translate(cx, cy); g.rotate(angle);
+    // Body
+    g.beginPath(); g.roundRect(-wid / 2, -len * 0.38, wid, len * 0.72, 2); g.fill();
+    cs(chalk(230, 90, 40), wid * 0.18);
+    g.beginPath(); g.roundRect(-wid / 2, -len * 0.38, wid, len * 0.72, 2); g.stroke();
+    // Tip
+    cf(chalk(255, 220, 180, 0.8));
+    g.beginPath(); g.moveTo(-wid / 2, len * 0.34); g.lineTo(wid / 2, len * 0.34); g.lineTo(0, len * 0.5); g.closePath(); g.fill();
+    // Label band
+    cf(chalk(230, 230, 230, 0.3));
+    g.fillRect(-wid / 2, -len * 0.04, wid, len * 0.12);
+    g.restore();
+  }
+
+  g.restore();
+}
 
 function _drawClassroom(g, w, h) {
   // Warm wall
   g.fillStyle = '#fff8e7';
   g.fillRect(0, 0, w, h);
 
-  // Chalkboard
-  const cbY = h * 0.02, cbH = h * 0.22;
+  // A-Z frieze at the very top
+  const friezeY = 2;
+  const boxW    = Math.max(10, (w - 20) / 26);
+  const boxH    = boxW * 1.15;
+  const friezeX = (w - boxW * 26) / 2;
+  const friezeColors = ['#e74c3c','#e67e22','#f1c40f','#2ecc71','#3498db','#9b59b6','#e91e63','#1abc9c','#ff922b','#6c5ce7'];
+  const fontSize = Math.max(7, boxW * 0.6);
+  g.font = `bold ${fontSize}px "Fredoka One", sans-serif`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let i = 0; i < 26; i++) {
+    const bx = friezeX + i * boxW;
+    g.fillStyle = friezeColors[i % friezeColors.length];
+    g.beginPath(); g.roundRect(bx + 1, friezeY, boxW - 2, boxH, 3); g.fill();
+    g.fillStyle = '#fff';
+    g.fillText(String.fromCharCode(65 + i), bx + boxW / 2, friezeY + boxH / 2);
+  }
+
+  // Chalkboard below the frieze
+  const cbY = friezeY + boxH + 8;
+  const cbH = h * 0.22;
   // Wooden frame
   g.fillStyle = '#6d4c2a';
   g.fillRect(w * 0.06, cbY - 6, w * 0.88, cbH + 12);
@@ -1529,22 +2296,8 @@ function _drawClassroom(g, w, h) {
   g.fillStyle = 'rgba(255,255,255,0.2)';
   g.fillRect(w * 0.08, cbY + cbH, w * 0.84, 3);
 
-  // Alphabet frieze below chalkboard
-  const friezeY = cbY + cbH + 16;
-  const boxW    = Math.max(10, (w - 20) / 26);
-  const boxH    = boxW * 1.15;
-  const friezeX = (w - boxW * 26) / 2;
-  const friezeColors = ['#e74c3c','#e67e22','#f1c40f','#2ecc71','#3498db','#9b59b6','#e91e63','#1abc9c','#ff922b','#6c5ce7'];
-  const fontSize = Math.max(7, boxW * 0.6);
-  g.font = `bold ${fontSize}px "Fredoka One", sans-serif`;
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (let i = 0; i < 26; i++) {
-    const bx = friezeX + i * boxW;
-    g.fillStyle = friezeColors[i % friezeColors.length];
-    g.beginPath(); g.roundRect(bx + 1, friezeY, boxW - 2, boxH, 3); g.fill();
-    g.fillStyle = '#fff';
-    g.fillText(String.fromCharCode(65 + i), bx + boxW / 2, friezeY + boxH / 2);
-  }
+  // ── Chalk doodles on the lower half of the board ──
+  _drawChalkDoodles(g, w * 0.08, cbY, w * 0.84, cbH);
 
   // Wainscoting
   const wainY = h * 0.72;
@@ -1621,41 +2374,73 @@ function _shuffleArray(arr) {
 }
 
 function startAlphabetMode() {
-  state.abc.wordOrder = _shuffleArray(ALPHABET_WORDS.map((_, i) => i));
-  state.abc.wordIdx   = 0;
+  state.abc.wordOrder    = _shuffleArray(ALPHABET_WORDS.map((_, i) => i));
+  state.abc.wordIdx      = 0;
+  // Pre-compute per-letter chalk opacities so they don't flicker each frame
+  state.abc.chalkOpacity = Array.from({length: 26}, () => 0.72 + Math.random() * 0.23);
   _setupAbcRound();
 }
 
 function _setupAbcRound() {
   const abc = state.abc;
-  abc.phase     = 'playing';
-  abc.placed    = false;
-  abc.dragging  = false;
-  abc.particles = [];
+  abc.phase           = 'playing';
+  abc.placed          = false;
+  abc.draggingTileIdx = -1;
+  abc.particles       = [];
 
-  const entry   = ALPHABET_WORDS[abc.wordOrder[abc.wordIdx % abc.wordOrder.length]];
-  const word    = entry.word;
+  const entry         = ALPHABET_WORDS[abc.wordOrder[abc.wordIdx % abc.wordOrder.length]];
+  const word          = entry.word;
+  const correctLetter = entry.letter;
 
-  // Layout calculations
+  // Drop zone layout
   const charSize = Math.min(52, cw / 8);
   const gap      = charSize * 0.15;
   const rowW     = word.length * (charSize + gap) - gap;
   const rowX     = (cw - rowW) / 2;
   const rowY     = ch * 0.62;
+  abc.dropX = rowX;
+  abc.dropY = rowY;
+  abc.dropW = charSize;
+  abc.dropH = charSize;
 
-  // Drop zone = the first character box
-  abc.dropX  = rowX;
-  abc.dropY  = rowY;
-  abc.dropW  = charSize;
-  abc.dropH  = charSize;
+  // Pick 2 random wrong letters
+  const wrongPool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter(l => l !== correctLetter);
+  for (let i = wrongPool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [wrongPool[i], wrongPool[j]] = [wrongPool[j], wrongPool[i]];
+  }
+  const letters = [correctLetter, wrongPool[0], wrongPool[1]];
+  // Shuffle the 3 choices so correct isn't always first
+  for (let i = letters.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [letters[i], letters[j]] = [letters[j], letters[i]];
+  }
 
-  // Draggable tile
-  abc.tileW     = charSize * 1.3;
-  abc.tileH     = charSize * 1.3;
-  abc.tileHomeX = (cw - abc.tileW) / 2;
-  abc.tileHomeY = ch * 0.82;
-  abc.tileX     = abc.tileHomeX;
-  abc.tileY     = abc.tileHomeY;
+  // Pick 3 random distinct bright colors
+  const palette = ['#e74c3c','#e67e22','#f1c40f','#27ae60','#2980b9','#8e44ad','#e91e63','#00bcd4','#ff5722','#009688'];
+  for (let i = palette.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [palette[i], palette[j]] = [palette[j], palette[i]];
+  }
+
+  // Position 3 tiles in a row at the bottom
+  const tileW   = charSize * 1.3;
+  const tileH   = charSize * 1.3;
+  const tileGap = tileW * 0.5;
+  const totalW  = 3 * tileW + 2 * tileGap;
+  const startX  = (cw - totalW) / 2;
+  const tileY   = ch * 0.75;
+
+  abc.tiles = letters.map((letter, i) => ({
+    letter,
+    isCorrect: letter === correctLetter,
+    color:     palette[i],
+    w: tileW, h: tileH,
+    homeX: startX + i * (tileW + tileGap),
+    homeY: tileY,
+    x:     startX + i * (tileW + tileGap),
+    y:     tileY,
+  }));
 }
 
 function _abcCurrentEntry() {
@@ -1703,21 +2488,53 @@ function renderAlphabet(timestamp) {
   const abc   = state.abc;
   const entry = _abcCurrentEntry();
 
-  // Hint text on chalkboard
+  // Alphabet on chalkboard in chalk style — "Aa Bb Cc ..." across multiple rows
+  // Board: x=cw*0.08, width=cw*0.84, top=_friezeBoxH+8, height=ch*0.22
+  const _friezeBoxH = Math.max(10, (cw - 20) / 26) * 1.15;
+  const _cbTop      = _friezeBoxH + 8;
+  const _cbH        = ch * 0.22;
+  const _cbX        = cw * 0.08;
+  const _cbW        = cw * 0.84;
+
   ctx.save();
-  ctx.font         = `bold 20px "${CONFIG.font}", sans-serif`;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle    = 'rgba(255,255,255,0.9)';
-  ctx.shadowColor  = 'rgba(0,0,0,0.3)';
-  ctx.shadowBlur   = 4;
-  ctx.fillText('Drag the letter!', cw / 2, ch * 0.13);
+
+  // Fit 13 pairs per row, 2 rows
+  const pairsPerRow = 13;
+  const colW        = _cbW / pairsPerRow;
+  const rowH        = _cbH / 2;
+  const fontSize    = Math.max(9, Math.min(colW * 0.52, rowH * 0.55));
+
+  ctx.font = `${fontSize}px "${CONFIG.font}", sans-serif`;
+
+  // Place two rows close together, centred vertically in the board
+  const lineSpacing = fontSize * 1.55;
+  const totalTextH  = lineSpacing * 2;
+  const firstRowY   = _cbTop + fontSize * 1.1;
+
+  for (let i = 0; i < 26; i++) {
+    const col  = i % pairsPerRow;
+    const row  = Math.floor(i / pairsPerRow);
+    const x    = _cbX + col * colW + colW / 2;
+    const y    = firstRowY + row * lineSpacing;
+    const pair = String.fromCharCode(65 + i) + String.fromCharCode(97 + i);
+
+    ctx.shadowColor   = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur    = 1;
+    ctx.shadowOffsetX = 0.5;
+    ctx.shadowOffsetY = 0.5;
+    ctx.fillStyle     = `rgba(255,255,255,${(abc.chalkOpacity && abc.chalkOpacity[i]) || 0.85})`;
+    ctx.fillText(pair, x, y);
+  }
+
   ctx.restore();
 
-  // Picture
-  const picCx = cw / 2;
-  const picCy = ch * 0.38;
-  const picS  = Math.min(cw * 0.6, ch * 0.3);
+  // Picture — position card top just below the chalkboard with a small gap
+  const picCx  = cw / 2;
+  const picS   = Math.min(cw * 0.6, ch * 0.3);
+  const _cbBot = _cbTop + _cbH;
+  const picCy  = _cbBot + ch * 0.03 + picS * 0.5;
 
   // Picture card background
   ctx.save();
@@ -1733,9 +2550,10 @@ function renderAlphabet(timestamp) {
   entry.draw(ctx, picCx, picCy, picS);
 
   // Word row
-  const charSize = Math.min(52, cw / 8);
-  const gapX     = charSize * 0.15;
   const word     = entry.word;
+  const gapFrac  = 0.15;
+  const charSize = Math.min(52, (cw * 0.94) / (word.length * (1 + gapFrac) - gapFrac));
+  const gapX     = charSize * gapFrac;
   const rowW     = word.length * (charSize + gapX) - gapX;
   const rowX     = (cw - rowW) / 2;
   const rowY     = ch * 0.62;
@@ -1786,25 +2604,124 @@ function renderAlphabet(timestamp) {
     }
   }
 
-  // Draggable tile (only if not placed)
+  // ── Classroom desk — always visible ──
+  if (abc.tiles.length === 3) {
+    const t0 = abc.tiles[0], t2 = abc.tiles[2];
+    const pad    = t0.w * 0.42;
+    const deskL  = t0.homeX - pad;
+    const deskW  = t2.homeX + t2.w + pad - deskL;
+    const sY     = t0.homeY + t0.h;    // tiles' bottom edge = desk top surface
+    const perspH = t0.h * 0.08;        // visible depth of tabletop (3D top face)
+    const fH     = t0.h * 0.13;        // front face thickness below surface
+    const legW   = Math.max(9, deskW * 0.055);
+    const legH   = t0.h * 0.85;        // taller legs — more desk-like
+    const li     = deskW * 0.09;       // leg inset from sides
+
+    ctx.save();
+
+    // ── Back legs (drawn first so tabletop covers their tops) ──
+    ctx.fillStyle = '#6e4812';
+    const bli = li + legW * 0.7;
+    ctx.beginPath(); ctx.roundRect(deskL + bli, sY - perspH, legW * 0.8, legH + perspH, [0,0,3,3]); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(deskL + deskW - bli - legW * 0.8, sY - perspH, legW * 0.8, legH + perspH, [0,0,3,3]); ctx.fill();
+
+    // ── Tabletop — top face (trapezoid perspective) ──
+    const topGrad = ctx.createLinearGradient(deskL, sY - perspH, deskL, sY);
+    topGrad.addColorStop(0, '#c48a38');
+    topGrad.addColorStop(1, '#e8bf68');
+    ctx.fillStyle = topGrad;
+    ctx.beginPath();
+    ctx.moveTo(deskL + perspH, sY - perspH);
+    ctx.lineTo(deskL + deskW - perspH, sY - perspH);
+    ctx.lineTo(deskL + deskW, sY);
+    ctx.lineTo(deskL, sY);
+    ctx.closePath();
+    ctx.fill();
+    // Highlight along back edge
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(deskL + perspH + 3, sY - perspH + 2);
+    ctx.lineTo(deskL + deskW - perspH - 3, sY - perspH + 2);
+    ctx.stroke();
+
+    // ── Front face of tabletop ──
+    const faceGrad = ctx.createLinearGradient(0, sY, 0, sY + fH);
+    faceGrad.addColorStop(0, '#b87830');
+    faceGrad.addColorStop(1, '#8a5818');
+    ctx.fillStyle = faceGrad;
+    ctx.beginPath();
+    ctx.moveTo(deskL, sY); ctx.lineTo(deskL + deskW, sY);
+    ctx.lineTo(deskL + deskW, sY + fH); ctx.lineTo(deskL, sY + fH);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.13)';
+    ctx.fillRect(deskL, sY + fH - 2, deskW, 2);
+
+    // ── Front legs ──
+    const legGrad = ctx.createLinearGradient(deskL + li, 0, deskL + li + legW, 0);
+    legGrad.addColorStop(0, '#9a6825');
+    legGrad.addColorStop(0.45, '#c89040');
+    legGrad.addColorStop(1, '#7a5018');
+    ctx.fillStyle = legGrad;
+    ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 8; ctx.shadowOffsetX = 2;
+    ctx.beginPath(); ctx.roundRect(deskL + li, sY + fH, legW, legH, [0,0,4,4]); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(deskL + deskW - li - legW, sY + fH, legW, legH, [0,0,4,4]); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0;
+
+    // ── Stretcher bar ──
+    ctx.fillStyle = '#8a5e18';
+    const bY = sY + fH + legH * 0.52;
+    ctx.fillRect(deskL + li + legW, bY, deskW - 2 * (li + legW), legH * 0.09);
+
+    ctx.restore();
+  }
+
+  // Three choice tiles (only while playing)
   if (!abc.placed && abc.phase === 'playing') {
     const pulse = 0.5 + 0.5 * Math.sin(timestamp * 0.003);
-    ctx.save();
-    ctx.shadowColor   = `rgba(46,204,113,${0.3 + pulse * 0.3})`;
-    ctx.shadowBlur    = 14 + pulse * 8;
-    ctx.shadowOffsetY = 4;
-    ctx.beginPath();
-    ctx.roundRect(abc.tileX, abc.tileY, abc.tileW, abc.tileH, 14);
-    ctx.fillStyle = '#2ecc71';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth   = 2;
-    ctx.stroke();
-    ctx.fillStyle    = '#fff';
-    ctx.font         = `bold ${abc.tileW * 0.6}px "${CONFIG.font}", sans-serif`;
-    ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(entry.letter, abc.tileX + abc.tileW / 2, abc.tileY + abc.tileH / 2);
-    ctx.restore();
+
+    for (let ti = 0; ti < abc.tiles.length; ti++) {
+      const tile = abc.tiles[ti];
+      ctx.save();
+      ctx.shadowColor   = `rgba(0,0,0,${0.2 + pulse * 0.12})`;
+      ctx.shadowBlur    = 12 + pulse * 6;
+      ctx.shadowOffsetY = 4;
+      ctx.beginPath();
+      ctx.roundRect(tile.x, tile.y, tile.w, tile.h, 14);
+      ctx.fillStyle = tile.color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+      ctx.fillStyle    = '#fff';
+      ctx.font         = `bold ${tile.w * 0.6}px "${CONFIG.font}", sans-serif`;
+      ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(tile.letter, tile.x + tile.w / 2, tile.y + tile.h / 2);
+      ctx.restore();
+    }
+  }
+
+  // Try-again message (fades out over 1.8 s)
+  if (abc.tryAgainMsg) {
+    const elapsed  = performance.now() - abc.tryAgainStart;
+    const duration = 1800;
+    const alpha    = Math.max(0, 1 - elapsed / duration);
+    if (alpha > 0) {
+      const scale = elapsed < 150 ? elapsed / 150 : 1;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cw / 2, ch * 0.78);
+      ctx.scale(scale, scale);
+      ctx.font         = `bold 26px "${CONFIG.font}", sans-serif`;
+      ctx.textAlign    = 'center'; ctx.textBaseline = 'middle';
+      ctx.shadowColor  = 'rgba(0,0,0,0.3)';
+      ctx.shadowBlur   = 8;
+      ctx.fillStyle    = '#ffffff';
+      ctx.fillText(abc.tryAgainMsg, 0, 0);
+      ctx.restore();
+    } else {
+      abc.tryAgainMsg = '';
+    }
   }
 
   // Celebration
@@ -2157,11 +3074,12 @@ function processMove(lx, ly) {
 function onTouchMove(e) {
   e.preventDefault();
   if (state.activeMode === 'alphabet') {
-    if (!state.abc.dragging) return;
-    const t = e.changedTouches[0];
-    const p = toLogicalPoint(t.clientX, t.clientY);
-    state.abc.tileX = p.x - state.abc.dragOffX;
-    state.abc.tileY = p.y - state.abc.dragOffY;
+    if (state.abc.draggingTileIdx < 0) return;
+    const t    = e.changedTouches[0];
+    const p    = toLogicalPoint(t.clientX, t.clientY);
+    const tile = state.abc.tiles[state.abc.draggingTileIdx];
+    tile.x = p.x - state.abc.dragOffX;
+    tile.y = p.y - state.abc.dragOffY;
     return;
   }
   for (const touch of e.changedTouches) {
@@ -2190,45 +3108,66 @@ function onTouchEnd() {
 function _abcPointerDown(px, py) {
   const abc = state.abc;
   if (abc.phase !== 'playing' || abc.placed) return;
-  if (px >= abc.tileX && px <= abc.tileX + abc.tileW &&
-      py >= abc.tileY && py <= abc.tileY + abc.tileH) {
-    abc.dragging = true;
-    abc.dragOffX = px - abc.tileX;
-    abc.dragOffY = py - abc.tileY;
+  for (let ti = 0; ti < abc.tiles.length; ti++) {
+    const tile = abc.tiles[ti];
+    if (px >= tile.x && px <= tile.x + tile.w &&
+        py >= tile.y && py <= tile.y + tile.h) {
+      abc.draggingTileIdx = ti;
+      abc.dragOffX = px - tile.x;
+      abc.dragOffY = py - tile.y;
+      break;
+    }
   }
 }
 
 function _abcPointerUp() {
   const abc = state.abc;
-  if (!abc.dragging) return;
-  abc.dragging = false;
+  if (abc.draggingTileIdx < 0) return;
+  const tile          = abc.tiles[abc.draggingTileIdx];
+  abc.draggingTileIdx = -1;
 
   // Check if tile overlaps drop zone
-  const tileCx = abc.tileX + abc.tileW / 2;
-  const tileCy = abc.tileY + abc.tileH / 2;
+  const tileCx = tile.x + tile.w / 2;
+  const tileCy = tile.y + tile.h / 2;
   const dropCx = abc.dropX + abc.dropW / 2;
   const dropCy = abc.dropY + abc.dropH / 2;
   const dist   = Math.hypot(tileCx - dropCx, tileCy - dropCy);
 
   if (dist < abc.dropW * 1.2) {
-    // Successful drop!
-    abc.placed = true;
-    abc.tileX  = abc.dropX;
-    abc.tileY  = abc.dropY;
-    _abcCelebrate();
+    if (tile.isCorrect) {
+      // Correct! snap to drop zone and celebrate
+      abc.placed = true;
+      tile.x = abc.dropX;
+      tile.y = abc.dropY;
+      _abcCelebrate();
+    } else {
+      // Wrong letter — snap back home and show encouragement
+      tile.x = tile.homeX;
+      tile.y = tile.homeY;
+      const phrases = [
+        'Oops! Try again! 😊',
+        'Try again! 🌟',
+        'Almost! Give it another go! 💛',
+        'Uh oh! Try a different one! 🐣',
+        'So close! Try again! 🌈',
+      ];
+      abc.tryAgainMsg   = phrases[Math.floor(Math.random() * phrases.length)];
+      abc.tryAgainStart = performance.now();
+    }
   } else {
-    // Snap back to home
-    abc.tileX = abc.tileHomeX;
-    abc.tileY = abc.tileHomeY;
+    // Missed drop zone — snap back home
+    tile.x = tile.homeX;
+    tile.y = tile.homeY;
   }
 }
 
 function onMouseMove(e) {
   if (state.activeMode === 'alphabet') {
-    if (!state.abc.dragging) return;
-    const p = toLogicalPoint(e.clientX, e.clientY);
-    state.abc.tileX = p.x - state.abc.dragOffX;
-    state.abc.tileY = p.y - state.abc.dragOffY;
+    if (state.abc.draggingTileIdx < 0) return;
+    const p    = toLogicalPoint(e.clientX, e.clientY);
+    const tile = state.abc.tiles[state.abc.draggingTileIdx];
+    tile.x = p.x - state.abc.dragOffX;
+    tile.y = p.y - state.abc.dragOffY;
     return;
   }
   if (!state.isPointerDown) return;
