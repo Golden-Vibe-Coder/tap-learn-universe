@@ -1,6 +1,6 @@
 {
   "name": "Tap Learn Universe",
-  "short_name": "TapLearn",
+  "short_name": "Tap Learn Universe",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#e3f2fd",
