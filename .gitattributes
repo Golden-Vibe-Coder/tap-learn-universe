@@ -1,0 +1,16 @@
+# Normalize all text files to LF so Prettier checks pass on Windows and Linux.
+* text=auto eol=lf
+
+# Explicitly mark binary files so Git never touches their line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.wav binary
+*.mp3 binary

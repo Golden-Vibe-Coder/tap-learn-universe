@@ -1,0 +1,22 @@
+{
+  "name": "tap-learn-universe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static browser game with commit-quality safeguards.",
+  "scripts": {
+    "format": "prettier --write \"**/*.{html,json,md,css,js}\"",
+    "format:check": "prettier --check \"**/*.{html,json,md,css,js}\"",
+    "lint": "htmlhint index.html",
+    "commit:prep": "npm run format:check && npm run lint",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "htmlhint": "^1.7.1",
+    "husky": "^9.1.7",
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=22.23.4",
+    "npm": ">=10.0.0"
+  }
+}

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Re-exec under bash if husky launched us with sh (husky v9 ignores the shebang).
+[ -z "$BASH_VERSION" ] && exec /usr/bin/env bash "$0" "$@"
+set -euo pipefail
+
+ERRORS=0
+STAGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
+
+# 1. Dangerous file types
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if echo "$file" | grep -qiE '\.(dump|sql\.gz|sql\.bak|pem|key|cert|p12|pfx|secret|pgpass)$'; then
+    echo "  BLOCKED [dangerous filetype]: $file"
+    ERRORS=$((ERRORS + 1))
+  fi
+done <<< "$STAGED"
+
+# 2. .env files (allow .env.example)
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if echo "$file" | grep -qE '(^|/)\.env(\.[^/]+)?$' && ! echo "$file" | grep -qE '\.example$'; then
+    echo "  BLOCKED [.env file]: $file"
+    ERRORS=$((ERRORS + 1))
+  fi
+done <<< "$STAGED"
+
+# 3. Backup / dump directories
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if echo "$file" | grep -qE '^(backups|db-backups|sql-dumps)/'; then
+    echo "  BLOCKED [backup folder]: $file"
+    ERRORS=$((ERRORS + 1))
+  fi
+done <<< "$STAGED"
+
+# 4. Secret patterns in added lines
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  added=$(git diff --cached --text -U0 -- "$file" 2>/dev/null | grep '^+' | grep -v '^+++' || true)
+  [ -z "$added" ] && continue
+
+  # DB connection strings with real passwords
+  if echo "$added" | grep -qE 'postgres(ql)?://[^:@$\{]+:[^@$\{]{8,}@' \
+     && ! echo "$added" | grep -qiE 'your[-_]|change.?me|example|placeholder|\$\{|<[A-Z_]+>'; then
+    echo "  BLOCKED [DB connection string with password]: $file"
+    ERRORS=$((ERRORS + 1))
+  fi
+
+  # Generic API key/tokens (conservative patterns)
+  if echo "$added" | grep -qE '(AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})'; then
+    echo "  BLOCKED [possible API token]: $file"
+    ERRORS=$((ERRORS + 1))
+  fi
+done <<< "$STAGED"
+
+if [ "$ERRORS" -gt 0 ]; then
+  echo ""
+  echo "Commit blocked - $ERRORS issue(s) found above."
+  echo "Fix the issues, then try committing again."
+  echo "To bypass (only if 100% certain this is a false positive): git commit --no-verify"
+  exit 1
+fi
+
+# Format only staged files and include formatter edits in the same commit.
+FORMAT_TARGETS=()
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if echo "$file" | grep -qE '\.(html|json|md|css|js)$'; then
+    FORMAT_TARGETS+=("$file")
+  fi
+done <<< "$STAGED"
+
+if [ "${#FORMAT_TARGETS[@]}" -gt 0 ]; then
+  npx prettier --write "${FORMAT_TARGETS[@]}"
+  for file in "${FORMAT_TARGETS[@]}"; do
+    git add -- "$file"
+  done
+fi
+
+npm run lint
